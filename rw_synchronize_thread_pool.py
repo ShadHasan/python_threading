@@ -10,6 +10,22 @@ class rw_pool(threading.Thread):
     gen_thread_id = 0
     thread_buffer = {}
 
+    class meta_buffer:
+        
+        buff = None
+
+        def __init__(self, _id):
+            self.id = _id
+
+        def get(self):
+            return self.buff
+
+        def set(self, buff):
+            self.buff = buff
+
+        def get_id(self):
+            return self.id
+
     # pool with synchronized method
     def __init__(self, max_thread, _file):
         self.max_thread = max_thread
@@ -31,19 +47,17 @@ class rw_pool(threading.Thread):
                     alloc_pool = pool_num
                     allocated = 1
                     break
-
-        self.rw_threads[alloc_pool] = rw_thread(self.gen_thread_id, self.evt, self._file, mutex=True,)
+        self.thread_buffer[self.gen_thread_id] = self.meta_buffer(self.gen_thread_id)
+        self.rw_threads[alloc_pool] = rw_thread(self.gen_thread_id, self.evt, self._file, self.thread_buffer[self.gen_thread_id], mutex=True,)
         self.rw_threads[alloc_pool].mode = do
         self.rw_threads[alloc_pool].data = data
         self.rw_threads[alloc_pool].operation = operation
-        self.thread_buffer[self.gen_thread_id] = None
-        self.rw_threads[alloc_pool].buffer = self.thread_buffer[self.gen_thread_id]
         self.rw_threads[alloc_pool].start()
         return self.gen_thread_id
         
     def get_thread_buffer(self, thread_id):
         try:
-            return self.thread_buffer[thread_id]
+            return self.thread_buffer[thread_id].get()
         except Exception as e:
             return "No thread"
 
@@ -71,11 +85,11 @@ class rw_operation():
 
 class rw_thread(threading.Thread):
 
-    def __init__(self, thread_number, evt, filename, mutex=False):
+    def __init__(self, thread_number, evt, filename, buff, mutex=False):
         self.thread_number = thread_number
         self.mutex = mutex
         self.evt = evt
-        self.buffer = None
+        self.buffer = buff
         self.filename = filename
         super(rw_thread, self).__init__()
 
@@ -105,7 +119,6 @@ class rw_thread(threading.Thread):
     def write(self, data):
         if not self.evt.is_set():
             self.evt.wait()
-        print "hello"
         self.evt.clear()
         with open(self.filename, 'w') as f:
             f.write(data)
@@ -115,27 +128,27 @@ class rw_thread(threading.Thread):
         logging.info("Thread id: {}, data: {}, operation: {}".format(self.thread_number, self.data, self.mode))
         if self.mode == "read":
             try:
-                self.buffer = {"Read: success": self.read()}
+                self.buffer.set({"Read: success": self.read()})
             except Exception as e:
-                self.buffer = {"Read: failure": e}
+                self.buffer.set({"Read: failure": e})
         elif self.mode == "write":
             try:
                 self.write(self.data)
-                self.buffer = {"Write: success": 0}
+                self.buffer.set({"Write: success": 0})
             except Exception as e:
-                self.buffer = {"Write: failure": e}
+                self.buffer.set({"Write: failure": e})
             finally:
                 self.evt.set()
         elif self.mode == "multi":
             try:
                 self.multi_ops(self.operation)
-                self.buffer = {"Operation: success": 0}
+                self.buffer.set({"Operation: success": 0})
             except Exception as e:
-                self.buffer = {"Operation: failure": e}
+                self.buffer.set({"Operation: failure": e})
             finally:
                 self.evt.set()
         else:
-            self.buffer = {"No operation": -1}
+            self.buffer.set({"No operation": -1})
         logging.info("Ending thread number: {}, iter: {}, buffer {}".format(self.thread_number, self.data, self.buffer))
         self.mutex = False
 
@@ -151,15 +164,15 @@ if __name__ == "__main__":
         thread_id = pool_1.action( mode[i%3], "thia ia operation {}, iteration {}".format(mode[i%3], i) )
         thread_list.append(thread_id)
     
-    
-    while len(thread_list) <= 0:
+   # Asyc wait on buffer, Here you won't see effect because of pool queue 
+    while len(thread_list) > 0:
         for li in thread_list:
             if pool_1.get_thread_buffer(li) is not str and pool_1.get_thread_buffer(li) != "No thread":
-                logger.info(pool_1.get_thread_buffer(li))
+                logging.info("Thread has buffer {}".format(pool_1.get_thread_buffer(li)) )
                 pool_1.remove_thread_buffer(li)
                 thread_list.remove(li)
             else:
-                logger.info("Buffer id: {} is not ready".format(li))
+                logging.info("Buffer id: {} is not ready".format(li))
         time.sleep(2)
 
     
