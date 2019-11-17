@@ -97,16 +97,18 @@ class rw_thread(threading.Thread):
         if not self.evt.is_set():
             self.evt.wait()
         self.evt.clear()
-        with open(self.filename, 'r+w') as f:
+        with open(self.filename, 'r') as f:
             data = f.read()
-            if str(type(operation)) == "function":
-                x = operation(data)
-                if x is not None:
-                    f.write(x)
-                else:
-                    raise RuntimeError("Mode: multi takes function of a argument and return string as argument")
-            else:
-                raise RuntimeError("Mode: multi takes function of a argument as argument")
+    	
+	if "function" in str(type(operation)):
+            x = operation(data)
+	    if x is not None:
+                with open(self.filename, 'w') as f:
+	            f.write(x)
+	    else:
+	        raise RuntimeError("Mode: multi takes function of a argument and return string as argument")
+        else:
+	    raise RuntimeError("Mode: multi takes function of a argument as argument")
 
 
     def read(self):
